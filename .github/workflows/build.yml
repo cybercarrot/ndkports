@@ -1,8 +1,6 @@
 name: Build & Publish OpenSSL
 
 on:
-  push:
-    branches: [main, release]
   workflow_dispatch:
 
 jobs:
@@ -32,34 +30,29 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build OpenSSL
+      - name: Get version
+        id: version
         run: |
           chmod +x gradlew
-          ./gradlew :openssl:prefabPackage \
-            -PndkPath=$ANDROID_NDK_HOME \
-            -Psigning.skip=true
+          ./gradlew -q exportProjectInfo -PndkPath=$ANDROID_NDK_HOME
+          VERSION=$(cat build/ndkports-matrix.json | jq -r '.include[] | select(.name=="openssl") | .version')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "OpenSSL version: ${VERSION}"
 
-      - name: Publish to GitHub Packages
+      - name: Build and publish
         run: |
-          ./gradlew :openssl:publish \
-            -PndkPath=$ANDROID_NDK_HOME \
-            -Psigning.skip=true
+          # Single Gradle invocation:
+          # - distZip: builds OpenSSL + publishes to local repo + creates zip
+          # - publishMavenPublicationToGitHubPackagesRepository: publishes to GitHub Packages
+          # Gradle deduplicates shared task dependencies, so the build runs only once.
+          ./gradlew \
+            :openssl:distZip \
+            :openssl:publishMavenPublicationToGitHubPackagesRepository \
+            -PndkPath=$ANDROID_NDK_HOME
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-
-      - name: Build distribution zip
-        run: |
-          ./gradlew :openssl:distZip \
-            -PndkPath=$ANDROID_NDK_HOME \
-            -Psigning.skip=true
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(./gradlew -q :openssl:properties -PndkPath=$ANDROID_NDK_HOME 2>/dev/null | grep "^version:" | awk '{print $2}')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

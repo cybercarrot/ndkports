@@ -199,6 +199,14 @@ publishing {
     }
 
     repositories {
+        // Local repository — used by distZip to package artifacts offline.
+        // No credentials required, safe for local builds.
+        maven {
+            name = "Local"
+            url = uri("${project.buildDir}/repository")
+        }
+        // GitHub Packages — only usable when GITHUB_TOKEN is available (CI).
+        // Publish via: ./gradlew :openssl:publishMavenPublicationToGitHubPackagesRepository
         maven {
             name = "GitHubPackages"
             url = uri("https://maven.pkg.github.com/${System.getenv("GITHUB_REPOSITORY") ?: "cybercarrot/ndkports"}")
@@ -206,9 +214,6 @@ publishing {
                 username = System.getenv("GITHUB_ACTOR") ?: ""
                 password = System.getenv("GITHUB_TOKEN") ?: ""
             }
-        }
-        maven {
-            url = uri("${project.buildDir}/repository")
         }
     }
 }
@@ -244,7 +249,9 @@ distributions {
 
 tasks {
     distZip {
-        dependsOn("publish")
+        // Only depend on local repo publish — not GitHubPackages.
+        // This keeps `./gradlew :openssl:distZip` usable without credentials.
+        dependsOn("publishMavenPublicationToLocalRepository")
         destinationDirectory.set(File(rootProject.buildDir, "distributions"))
     }
 }
