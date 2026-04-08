@@ -20,13 +20,12 @@ val opensslDownloadUrl = "https://github.com/openssl/openssl/releases/download/o
 val opensslSha256Url = "${opensslDownloadUrl}.sha256"
 val opensslAscUrl = "${opensslDownloadUrl}.asc"
 
-group = "io.github.ronickg"
+group = "io.github.cybercarrot"
 version = if (snapshotVersion.isNotEmpty()) "$libVersion-$snapshotVersion" else libVersion
 
 plugins {
     id("maven-publish")
     id("com.android.ndkports.NdkPorts")
-    id("signing")
     distribution
 }
 
@@ -200,16 +199,23 @@ publishing {
     }
 
     repositories {
+        // Local repository — used by distZip to package artifacts offline.
+        // No credentials required, safe for local builds.
         maven {
+            name = "Local"
             url = uri("${project.buildDir}/repository")
         }
+        // GitHub Packages — only usable when GITHUB_TOKEN is available (CI).
+        // Publish via: ./gradlew :openssl:publishMavenPublicationToGitHubPackagesRepository
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/${System.getenv("GITHUB_REPOSITORY") ?: "cybercarrot/ndkports"}")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
     }
-}
-
-// Configure signing
-signing {
-    useGpgCmd()
-    sign(publishing.publications["maven"])
 }
 
 distributions {
@@ -222,9 +228,6 @@ distributions {
             include("**/*.aar")
             include("**/*.pom")
             include("**/*.module")
-            include("**/*.aar.asc")
-            include("**/*.pom.asc")
-            include("**/*.module.asc")
             include("**/*.aar.md5")
             include("**/*.pom.md5")
             include("**/*.module.md5")
@@ -238,7 +241,6 @@ distributions {
             include("**/*.pom.sha512")
             include("**/*.module.sha512")
             include("**/maven-metadata.xml")
-            include("**/maven-metadata.xml.asc")
             include("**/maven-metadata.xml.sha256")
             include("**/maven-metadata.xml.sha512")
         }
@@ -247,7 +249,9 @@ distributions {
 
 tasks {
     distZip {
-        dependsOn("publish")
+        // Only depend on local repo publish — not GitHubPackages.
+        // This keeps `./gradlew :openssl:distZip` usable without credentials.
+        dependsOn("publishMavenPublicationToLocalRepository")
         destinationDirectory.set(File(rootProject.buildDir, "distributions"))
     }
 }
